@@ -10,86 +10,99 @@
 // ==/UserScript==
 
 (function () {
-	console.log('Twitch Highlight AutoPlay Runing...');
+    console.log('Twitch Highlight AutoPlay Running...');
+
+    // 主要逻辑函数
+    function runHighlightAutoPlay() {
+        const videoId = getVideoId();
+        const oauthToken = getOAuthToken();
+        const comments = getAllComments(videoId, oauthToken);
+        const highlight = updateHighlight(comments);
+        const highlightTimes = getHighlightTimes(highlight, 0.05);
+        autoplayHighlight(highlightTimes);
+    }
+
+    // 获取视频ID
+    function getVideoId() {
+        return window.location.pathname.substring(8);
+    }
+
+    // 获取 OAuth Token
+    function getOAuthToken() {
+        return window.authorization;
+    }
+
+    // 获取所有评论
+    function getAllComments(videoId, oauthToken) {
+        const comments = [];
+        let cursor = 1;
+        while (cursor) {
+            const response = getComments(videoId, oauthToken, cursor);
+            comments.push(...response.comments);
+            cursor = response._next;
+        }
+        return comments;
+    }
+
+    // 获取评论
+    function getComments(videoId, oauthToken, cursor) {
+        const url = 'https://api.twitch.tv/v5/videos/' + videoId + '/comments?' +
+            (cursor === 1 ? 'content_offset_seconds=0' : 'cursor=' + cursor);
+        const req = new XMLHttpRequest();
+        req.open('GET', url, false);
+        req.setRequestHeader('authorization', oauthToken);
+        req.send();
+        return JSON.parse(req.response);
+    }
+
+    // 更新热点片段
+    function updateHighlight(comments) {
+        const highlight = {};
+        comments.forEach(comment => {
+            const minute = parseInt(comment.content_offset_seconds / 60);
+            highlight[minute] = (highlight[minute] || 0) + 1;
+        });
+        return highlight;
+    }
+
+    // 获取热点片段的时间
+    function getHighlightTimes(highlight, rate) {
+        const sortedMinutes = Object.keys(highlight).sort((a, b) => highlight[a] - highlight[b]);
+        const selectedMinutes = sortedMinutes.slice(-parseInt(rate * sortedMinutes.length)).sort();
+        console.log(selectedMinutes);
+        return selectedMinutes;
+    }
+
+    // 自动播放热点片段
+    async function autoplayHighlight(highlightTimes, step = 1) {
+        const video = document.querySelector('video');
+        let flag = false;
+        while (true) {
+            await sleep(1000);
+            const currentTime = parseInt(video.currentTime / 60);
+            for (let i = 0; i < highlightTimes.length; i++) {
+                const highlightTime = parseInt(highlightTimes[i]);
+                if (highlightTime >= currentTime) {
+                    if (highlightTime - currentTime > step) {
+                        video.currentTime = (highlightTime - step) * 60;
+                        console.log(video.currentTime / 60);
+                    }
+                    break;
+                }
+            }
+            if (currentTime > highlightTimes.slice(-1) && !flag) {
+                flag = true;
+                await sleep(5000);
+                video.pause();
+            }
+        }
+    }
+
+    // 延时函数
+    function sleep(time) {
+        return new Promise(resolve => setTimeout(resolve, time));
+    }
+
+    // 运行主要逻辑
+    runHighlightAutoPlay();
 })();
-
-window.onload = function () {
-
-	var req = new XMLHttpRequest();
-	function get_comments(vid, oauth, cursor = 1) {
-		let url = 'https://api.twitch.tv/v5/videos/' + vid.toString() + '/comments?';
-		if (cursor === 1) {
-			url = url + 'content_offset_seconds=0';
-		} else {
-			url = url + 'cursor=' + cursor;
-		}
-		req.open('GET', url, false);
-		req.setRequestHeader('authorization', oauth);
-		req.send();
-		return JSON.parse(req.response);
-	}
-
-	var highlight = {};
-
-	function get_all_comments() {
-		let vid = window.location.pathname.substring(8);
-		let oauth = window.authorization;
-		let cursor = 1;
-		while (cursor) {
-			let r = get_comments(vid, oauth, cursor);
-			highlight_update(r.comments);
-			cursor = r._next;
-			console.log(cursor);
-		}
-
-	}
-
-	function highlight_update(comments) {
-		comments.forEach(one => {
-			let i = parseInt(one.content_offset_seconds / 60);
-			highlight[i] = (highlight[i] || 0) + 1;
-		});
-	}
-
-	function highlight_time(rate) {
-		var res = Object.keys(highlight).sort(function (a, b) { return highlight[a] - highlight[b]; });
-		res = res.slice(-parseInt(rate * res.length));
-		res = res.sort();
-		console.log(res);
-		return res;
-	}
-
-	get_all_comments();
-
-
-	function sleep(time) {
-		return new Promise((resolve) => setTimeout(resolve, time));
-	}
-	// 播放highlight之前1分钟和当前1分钟
-	async function autoplay_highlight(highlight, step = 1) {
-		let vd = document.querySelector('video');
-		let flag = !1;
-		while (1) {
-			await sleep(1000);
-			let tm = parseInt(vd.currentTime / 60);
-			for (var i = 0; i < highlight.length; i++) {
-				let th = parseInt(highlight[i]);
-				if (th >= tm) {
-					if (th - tm > step) {
-						vd.currentTime = (th - step) * 60;
-						console.log(vd.currentTime / 60);
-					}
-					break;
-				}
-			}
-			if (tm > highlight.slice(-1) && !flag) {
-				flag = !0;
-				await sleep(5000);
-				vd.pause();
-
-			}
-		}
-	}
-
-	autoplay_highlight(highlight_time(0.05));
-};
